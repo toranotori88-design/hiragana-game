@@ -1,4 +1,4 @@
-<!doctype html> 
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
@@ -91,7 +91,7 @@
 
       <div class="row">
         <input id="ans" placeholder="在这里输入（ka, sa, shi...）"
-               autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false"
+               autocapitalize="none" enterkeyhint="go"autocomplete="off" autocorrect="off" spellcheck="false"
                inputmode="latin" />
         <button id="okBtn" class="primary">确定</button>
       </div>
@@ -279,7 +279,7 @@ function pickNext(){
   current = weightedPick(pool);
   kanaEl.textContent = current.kana;
   ansEl.value = "";
-  ansEl.focus();
+  ansEl.focus({ preventScroll: true });
 }
 
 function submit(){
@@ -323,7 +323,7 @@ function submit(){
     bestEl.textContent = best;
     localStorage.setItem(LS_BEST, String(best));
   }
-
+  ansEl.focus({ preventScroll: true });
   setTimeout(pickNext, 250);
 }
 
@@ -377,7 +377,13 @@ function stop(){
 }
 
 okBtn.onclick = submit;
-ansEl.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+ansEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();       // stops the browser from doing "Done" -> blur
+    submit();
+  }
+});
+
 
 startBtn.onclick = start;
 stopBtn.onclick = stop;
@@ -417,4 +423,3 @@ pickNext();
 </script>
 </body>
 </html>
-

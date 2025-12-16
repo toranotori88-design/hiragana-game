@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>平假名打字游戏</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; margin: 0; }
+    .wrap { max-width: 560px; margin: 0 auto; padding: 14px; padding-top: 86px; }
+
+    /* ALWAYS visible top bar */
+    .topbar {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: #fff; border-bottom: 1px solid #eee;
+      padding: 10px 14px; z-index: 9999;
+    }
+    .topinner { max-width: 560px; margin: 0 auto; display:flex; justify-content:space-between; gap:10px; }
+    .title { font-weight: 900; }
+    .stats { text-align:right; font-weight: 900; line-height: 1.2; }
+    .stats small { font-weight: 700; opacity: .7; }
+
+    /* Last result shown in top bar */
+    .last {
+      margin-top: 6px;
+      font-weight: 800;
+      padding: 6px 10px;
+      border-radius: 999px;
+      display: inline-block;
+      border: 1px solid #eee;
+    }
+    .good { color:#0a7b2f; }
+    .bad  { color:#b00020; }
+
+    .panel { border: 1px solid #eee; border-radius: 16px; padding: 14px; margin-top: 10px; }
+    .kana { font-size: 96px; text-align:center; margin: 16px 0 8px; }
+    .hint { text-align:center; opacity:.75; margin-bottom: 10px; }
+    .row  { display:flex; gap:10px; }
+    input {
+      flex:1; font-size: 22px; padding: 14px; border-radius: 14px;
+      border: 1px solid #ccc;
+    }
+    button {
+      font-size: 16px; padding: 12px 14px; border-radius: 14px;
+      border: 1px solid #ccc; background: #f6f6f6; font-weight: 800;
+    }
+    button.primary { background:#111; color:#fff; border-color:#111; }
+    button.danger  { background:#b00020; color:#fff; border-color:#b00020; }
+    button.small   { padding: 10px 12px; font-size: 14px; }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top: 10px; }
+
+    .groupBox { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top: 10px; }
+    .chip {
+      padding: 10px 12px; border-radius: 999px; border: 1px solid #ddd; background: #fff;
+      font-weight: 900; cursor:pointer; user-select:none;
+    }
+    .chip.on { background:#111; color:#fff; border-color:#111; }
+    .tiny { opacity:.7; font-size: 13px; text-align:center; margin-top: 8px; }
+
+    .history {
+      max-height: 240px; overflow:auto;
+      border-top: 1px dashed #eee; margin-top: 12px; padding-top: 10px;
+      font-size: 14px;
+    }
+    .hrow {
+      display:flex; justify-content:space-between; gap:10px;
+      padding: 8px 0; border-bottom: 1px solid #f2f2f2;
+    }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="topinner">
+      <div>
+        <div class="title">平假名打字游戏</div>
+        <div class="last" id="lastResult">准备就绪</div>
+      </div>
+      <div class="stats">
+        分数：<span id="score">0</span> · 最高：<span id="best">0</span><br/>
+        <small>剩余：<span id="timeLeft">--</span>s</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <div class="panel">
+      <div class="kana" id="kana">か</div>
+      <div class="hint">输入罗马音（例：<b>ka</b>），按回车</div>
+
+      <div class="row">
+        <input id="ans" placeholder="在这里输入（ka, sa, shi...）"
+               autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false"
+               inputmode="latin" />
+        <button id="okBtn" class="primary">确定</button>
+      </div>
+
+      <div class="controls">
+        <button class="small" id="btn30">⏱ 30秒</button>
+        <button class="small" id="btn60">⏱ 60秒</button>
+        <button class="small primary" id="startBtn">开始</button>
+        <button class="small danger" id="stopBtn" disabled>结束</button>
+      </div>
+
+      <div class="tiny">支持：shi/si、chi/ti、tsu/tu、fu/hu、ji/zi 等常见写法。</div>
+
+      <div class="history">
+        <div style="font-weight:900; margin-bottom:6px;">输入记录（最新在上面）</div>
+        <div id="historyList"></div>
+        <div class="controls" style="margin-top:10px;">
+          <button class="small" id="clearHistory">清空记录</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div style="text-align:center; font-weight:900;">选择练习范围（只选会的也可以）</div>
+      <div class="groupBox" id="groupBox"></div>
+
+      <div class="controls" style="margin-top:12px;">
+        <button class="small" id="selectAll">全选</button>
+        <button class="small" id="selectNone">全不选</button>
+        <button class="small" id="resetMistakes">清空错题权重</button>
+      </div>
+
+      <div class="tiny">错得越多的假名会更常出现（自动重复直到记住）。</div>
+    </div>
+
+  </div>
+
+<script>
+/* ---------------- Data ---------------- */
+const GROUPS = [
+  { id:"A",  name:"あ行 (a i u e o)" },
+  { id:"K",  name:"か行 (ka...)" },
+  { id:"S",  name:"さ行 (sa...)" },
+  { id:"T",  name:"た行 (ta...)" },
+  { id:"N",  name:"な行 (na...)" },
+  { id:"H",  name:"は行 (ha...)" },
+  { id:"M",  name:"ま行 (ma...)" },
+  { id:"Y",  name:"や行 (ya...)" },
+  { id:"R",  name:"ら行 (ra...)" },
+  { id:"W",  name:"わ行 (wa/wo/n)" },
+  { id:"GZDBP", name:"浊音/半浊音 (ga/za/da/ba/pa)" },
+];
+
+const KANA = [
+  {kana:"あ", a:["a"], g:"A"}, {kana:"い", a:["i"], g:"A"}, {kana:"う", a:["u"], g:"A"}, {kana:"え", a:["e"], g:"A"}, {kana:"お", a:["o"], g:"A"},
+  {kana:"か", a:["ka"], g:"K"}, {kana:"き", a:["ki"], g:"K"}, {kana:"く", a:["ku"], g:"K"}, {kana:"け", a:["ke"], g:"K"}, {kana:"こ", a:["ko"], g:"K"},
+  {kana:"さ", a:["sa"], g:"S"}, {kana:"し", a:["shi","si"], g:"S"}, {kana:"す", a:["su"], g:"S"}, {kana:"せ", a:["se"], g:"S"}, {kana:"そ", a:["so"], g:"S"},
+  {kana:"た", a:["ta"], g:"T"}, {kana:"ち", a:["chi","ti"], g:"T"}, {kana:"つ", a:["tsu","tu"], g:"T"}, {kana:"て", a:["te"], g:"T"}, {kana:"と", a:["to"], g:"T"},
+  {kana:"な", a:["na"], g:"N"}, {kana:"に", a:["ni"], g:"N"}, {kana:"ぬ", a:["nu"], g:"N"}, {kana:"ね", a:["ne"], g:"N"}, {kana:"の", a:["no"], g:"N"},
+  {kana:"は", a:["ha"], g:"H"}, {kana:"ひ", a:["hi"], g:"H"}, {kana:"ふ", a:["fu","hu"], g:"H"}, {kana:"へ", a:["he"], g:"H"}, {kana:"ほ", a:["ho"], g:"H"},
+  {kana:"ま", a:["ma"], g:"M"}, {kana:"み", a:["mi"], g:"M"}, {kana:"む", a:["mu"], g:"M"}, {kana:"め", a:["me"], g:"M"}, {kana:"も", a:["mo"], g:"M"},
+  {kana:"や", a:["ya"], g:"Y"}, {kana:"ゆ", a:["yu"], g:"Y"}, {kana:"よ", a:["yo"], g:"Y"},
+  {kana:"ら", a:["ra"], g:"R"}, {kana:"り", a:["ri"], g:"R"}, {kana:"る", a:["ru"], g:"R"}, {kana:"れ", a:["re"], g:"R"}, {kana:"ろ", a:["ro"], g:"R"},
+  {kana:"わ", a:["wa"], g:"W"}, {kana:"を", a:["wo","o"], g:"W"}, {kana:"ん", a:["n","nn"], g:"W"},
+
+  {kana:"が", a:["ga"], g:"GZDBP"}, {kana:"ぎ", a:["gi"], g:"GZDBP"}, {kana:"ぐ", a:["gu"], g:"GZDBP"}, {kana:"げ", a:["ge"], g:"GZDBP"}, {kana:"ご", a:["go"], g:"GZDBP"},
+  {kana:"ざ", a:["za"], g:"GZDBP"}, {kana:"じ", a:["ji","zi"], g:"GZDBP"}, {kana:"ず", a:["zu"], g:"GZDBP"}, {kana:"ぜ", a:["ze"], g:"GZDBP"}, {kana:"ぞ", a:["zo"], g:"GZDBP"},
+  {kana:"だ", a:["da"], g:"GZDBP"}, {kana:"ぢ", a:["ji","di"], g:"GZDBP"}, {kana:"づ", a:["zu","du"], g:"GZDBP"}, {kana:"で", a:["de"], g:"GZDBP"}, {kana:"ど", a:["do"], g:"GZDBP"},
+  {kana:"ば", a:["ba"], g:"GZDBP"}, {kana:"び", a:["bi"], g:"GZDBP"}, {kana:"ぶ", a:["bu"], g:"GZDBP"}, {kana:"べ", a:["be"], g:"GZDBP"}, {kana:"ぼ", a:["bo"], g:"GZDBP"},
+  {kana:"ぱ", a:["pa"], g:"GZDBP"}, {kana:"ぴ", a:["pi"], g:"GZDBP"}, {kana:"ぷ", a:["pu"], g:"GZDBP"}, {kana:"ぺ", a:["pe"], g:"GZDBP"}, {kana:"ぽ", a:["po"], g:"GZDBP"},
+];
+
+/* ---------------- LocalStorage keys ---------------- */
+const LS_MIST = "kana_mistakes_v2";
+const LS_BEST = "kana_best_v2";
+const LS_HIST = "kana_history_v2";
+
+/* ---------------- State ---------------- */
+let enabledGroups = new Set(GROUPS.map(g => g.id));
+let mistakes = loadJSON(LS_MIST, {});
+let best = Number(localStorage.getItem(LS_BEST) || "0");
+let history = loadJSON(LS_HIST, []); // newest first
+
+let duration = 30;
+let running = false;
+let timer = null;
+let timeLeft = 0;
+let score = 0;
+let current = null;
+
+/* ---------------- DOM ---------------- */
+const scoreEl = document.getElementById("score");
+const bestEl  = document.getElementById("best");
+const timeLeftEl = document.getElementById("timeLeft");
+const lastResultEl = document.getElementById("lastResult");
+
+const kanaEl = document.getElementById("kana");
+const ansEl  = document.getElementById("ans");
+const okBtn  = document.getElementById("okBtn");
+
+const btn30 = document.getElementById("btn30");
+const btn60 = document.getElementById("btn60");
+const startBtn = document.getElementById("startBtn");
+const stopBtn  = document.getElementById("stopBtn");
+
+const groupBox = document.getElementById("groupBox");
+const historyList = document.getElementById("historyList");
+const clearHistoryBtn = document.getElementById("clearHistory");
+
+/* ---------------- Helpers ---------------- */
+function loadJSON(key, fallback){
+  try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
+  catch { return fallback; }
+}
+function saveJSON(key, obj){ localStorage.setItem(key, JSON.stringify(obj)); }
+
+function normalize(s){ return (s||"").trim().toLowerCase().replace(/\s+/g,""); }
+
+function getActivePool(){
+  return KANA.filter(x => enabledGroups.has(x.g));
+}
+
+function weightedPick(pool){
+  // wrong -> more likely
+  let total = 0;
+  const weights = pool.map(item=>{
+    const w = 1 + (mistakes[item.kana] || 0) * 2;
+    total += w;
+    return w;
+  });
+  let r = Math.random() * total;
+  for (let i=0;i<pool.length;i++){
+    r -= weights[i];
+    if (r <= 0) return pool[i];
+  }
+  return pool[pool.length-1];
+}
+
+function setLast(text, kind){
+  lastResultEl.textContent = text;
+  lastResultEl.classList.remove("good","bad");
+  if (kind) lastResultEl.classList.add(kind);
+}
+
+function renderHistory(){
+  historyList.innerHTML = "";
+  history.slice(0, 50).forEach(h=>{
+    const row = document.createElement("div");
+    row.className = "hrow";
+    row.innerHTML = `
+      <div><b>${h.kana}</b> <span class="mono" style="opacity:.7;">(${h.correct})</span></div>
+      <div class="mono">${h.typed || "(空)"}</div>
+      <div class="${h.ok ? "good" : "bad"}">${h.ok ? "✅" : "❌"}</div>
+    `;
+    historyList.appendChild(row);
+  });
+}
+
+/* ---------------- Groups UI ---------------- */
+function renderGroups(){
+  groupBox.innerHTML = "";
+  GROUPS.forEach(g=>{
+    const chip = document.createElement("div");
+    chip.className = "chip" + (enabledGroups.has(g.id) ? " on" : "");
+    chip.textContent = g.name;
+    chip.onclick = ()=>{
+      if (running) return;
+      if (enabledGroups.has(g.id)) enabledGroups.delete(g.id);
+      else enabledGroups.add(g.id);
+      renderGroups();
+      if (!running) pickNext();
+    };
+    groupBox.appendChild(chip);
+  });
+}
+
+/* ---------------- Game ---------------- */
+function pickNext(){
+  const pool = getActivePool();
+  if (pool.length === 0){
+    kanaEl.textContent = "？";
+    setLast("请先在下面选择练习范围", "bad");
+    return;
+  }
+  current = weightedPick(pool);
+  kanaEl.textContent = current.kana;
+  ansEl.value = "";
+  ansEl.focus();
+}
+
+function submit(){
+  if (!running || !current) return;
+  const typed = normalize(ansEl.value);
+  if (!typed) return;
+
+  const ok = current.a.includes(typed);
+  const correct = current.a[0];
+
+  if (ok){
+    score += 10;
+    setLast(`✅ 正确！ ${current.kana} = ${correct}`, "good");
+    // forgive slowly
+    if (mistakes[current.kana] > 0) {
+      mistakes[current.kana] = Math.max(0, mistakes[current.kana] - 1);
+      saveJSON(LS_MIST, mistakes);
+    }
+  } else {
+    score = Math.max(0, score - 5);
+    mistakes[current.kana] = (mistakes[current.kana] || 0) + 1;
+    saveJSON(LS_MIST, mistakes);
+    setLast(`❌ 错了：你输入 ${typed}，正确是 ${correct}`, "bad");
+  }
+
+  // record what they typed
+  history.unshift({
+    t: Date.now(),
+    kana: current.kana,
+    typed,
+    correct,
+    ok
+  });
+  history = history.slice(0, 100);
+  saveJSON(LS_HIST, history);
+  renderHistory();
+
+  scoreEl.textContent = score;
+  if (score > best){
+    best = score;
+    bestEl.textContent = best;
+    localStorage.setItem(LS_BEST, String(best));
+  }
+
+  setTimeout(pickNext, 250);
+}
+
+function setDuration(sec){
+  if (running) return;
+  duration = sec;
+  btn30.classList.toggle("primary", sec===30);
+  btn60.classList.toggle("primary", sec===60);
+}
+btn30.onclick = ()=>setDuration(30);
+btn60.onclick = ()=>setDuration(60);
+
+function start(){
+  const pool = getActivePool();
+  if (pool.length === 0){
+    setLast("先在下面选择你想练的行（例如 あ行 / か行）", "bad");
+    return;
+  }
+
+  running = true;
+  score = 0;
+  scoreEl.textContent = score;
+
+  timeLeft = duration;
+  timeLeftEl.textContent = timeLeft;
+
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+
+  setLast("开始！冲分！🔥", null);
+  pickNext();
+
+  timer = setInterval(()=>{
+    timeLeft--;
+    timeLeftEl.textContent = timeLeft;
+    if (timeLeft <= 0) stop();
+  }, 1000);
+}
+
+function stop(){
+  if (!running) return;
+  running = false;
+  clearInterval(timer);
+  timer = null;
+
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  timeLeftEl.textContent = "--";
+
+  setLast(`时间到！本局分数：${score}`, null);
+}
+
+okBtn.onclick = submit;
+ansEl.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+
+startBtn.onclick = start;
+stopBtn.onclick = stop;
+
+/* ---------------- Bottom buttons ---------------- */
+document.getElementById("selectAll").onclick = ()=>{
+  if (running) return;
+  enabledGroups = new Set(GROUPS.map(g=>g.id));
+  renderGroups();
+  pickNext();
+};
+document.getElementById("selectNone").onclick = ()=>{
+  if (running) return;
+  enabledGroups = new Set();
+  renderGroups();
+  pickNext();
+};
+document.getElementById("resetMistakes").onclick = ()=>{
+  mistakes = {};
+  localStorage.removeItem(LS_MIST);
+  setLast("✅ 已清空错题权重（出现概率重置）", "good");
+};
+
+clearHistoryBtn.onclick = ()=>{
+  history = [];
+  localStorage.removeItem(LS_HIST);
+  renderHistory();
+  setLast("✅ 已清空输入记录", "good");
+};
+
+/* ---------------- Init ---------------- */
+bestEl.textContent = best;
+setDuration(30);
+renderGroups();
+renderHistory();
+pickNext();
+</script>
+</body>
+</html>
